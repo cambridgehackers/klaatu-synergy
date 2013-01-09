@@ -79,29 +79,32 @@ typedef struct {
     const char *params;
 } COMMANDINFO;
 
-enum {CMD_SYNERGY, CMD_QINF, CMD_CCLP, CMD_DCLP, CMD_DSOP,
-    CMD_CALV, CMD_CIAK, CMD_CROP, CMD_CNOP, CMD_CINN, CMD_COUT, CMD_DMMV,
-    CMD_DMDN, CMD_DMUP, CMD_DKDN, CMD_DKUP,
-    };
+#define COMMANDS() \
+    CC( CMD_SYNERGY, "Synergy", "22S") \
+    CC( CMD_QINF,    "QINF", NULL) \
+    CC( CMD_CCLP,    "CCLP", "14") \
+    CC( CMD_DCLP,    "DCLP", "14S") \
+    CC( CMD_DSOP,    "DSOP", "4") \
+    CC( CMD_CALV,    "CALV", NULL) \
+    CC( CMD_CIAK,    "CIAK", NULL) \
+    CC( CMD_CROP,    "CROP", NULL) \
+    CC( CMD_CNOP,    "CNOP", NULL) \
+    CC( CMD_CINN,    "CINN", "2242") \
+    CC( CMD_COUT,    "COUT", NULL) \
+    CC( CMD_DMMV,    "DMMV", "22") \
+    CC( CMD_DMDN,    "DMDN", "1") \
+    CC( CMD_DMUP,    "DMUP", "1") \
+    CC( CMD_DKDN,    "DKDN", "222") \
+    CC( CMD_DKUP,    "DKUP", "222")
 
+#define CC(A,B,C) A,
+enum {CMD_NONE, COMMANDS() };
+#undef CC
+#define CC(A,B,C) {A, B, C},
 static COMMANDINFO commands[] = {
-    { CMD_SYNERGY, "Synergy", "22S"},
-    { CMD_QINF,    "QINF", NULL},
-    { CMD_CCLP,    "CCLP", "14"},
-    { CMD_DCLP,    "DCLP", "14S"},
-    { CMD_DSOP,    "DSOP", "4"},
-    { CMD_CALV,    "CALV", NULL},
-    { CMD_CIAK,    "CIAK", NULL},
-    { CMD_CROP,    "CROP", NULL},
-    { CMD_CNOP,    "CNOP", NULL},
-    { CMD_CINN,    "CINN", "2242"},
-    { CMD_COUT,    "COUT", NULL},
-    { CMD_DMMV,    "DMMV", "22"},
-    { CMD_DMDN,    "DMDN", "1"},
-    { CMD_DMUP,    "DMUP", "1"},
-    { CMD_DKDN,    "DKDN", "222"},
-    { CMD_DKUP,    "DKUP", "222"},
+    COMMANDS()
     { -1, NULL, NULL} };
+#undef CC
 
 static int readdata(void)
 {
