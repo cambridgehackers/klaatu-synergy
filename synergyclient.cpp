@@ -87,9 +87,9 @@ enum {CMD_SYNERGY, CMD_QINF, CMD_CCLP, CMD_DCLP, CMD_DSOP,
 static COMMANDINFO commands[] = {
     { CMD_SYNERGY, "Synergy", "22S"},
     { CMD_QINF,    "QINF", NULL},
-    { CMD_CCLP,    "CCLP", NULL},
-    { CMD_DCLP,    "DCLP", NULL},
-    { CMD_DSOP,    "DSOP", NULL},
+    { CMD_CCLP,    "CCLP", "14"},
+    { CMD_DCLP,    "DCLP", "14S"},
+    { CMD_DSOP,    "DSOP", "4"},
     { CMD_CALV,    "CALV", NULL},
     { CMD_CIAK,    "CIAK", NULL},
     { CMD_CROP,    "CROP", NULL},
@@ -97,10 +97,10 @@ static COMMANDINFO commands[] = {
     { CMD_CINN,    "CINN", "2242"},
     { CMD_COUT,    "COUT", NULL},
     { CMD_DMMV,    "DMMV", "22"},
-    { CMD_DMDN,    "DMDN", NULL},
-    { CMD_DMUP,    "DMUP", NULL},
-    { CMD_DKDN,    "DKDN", NULL},
-    { CMD_DKUP,    "DKUP", NULL},
+    { CMD_DMDN,    "DMDN", "1"},
+    { CMD_DMUP,    "DMUP", "1"},
+    { CMD_DKDN,    "DKDN", "222"},
+    { CMD_DKUP,    "DKUP", "222"},
     { -1, NULL, NULL} };
 
 static int readdata(void)
