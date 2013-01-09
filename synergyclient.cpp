@@ -27,6 +27,7 @@
 #define BUFSIZE     1024    /* size of buffer sent */
 static unsigned char iobuffer[BUFSIZE];
 static int socketfd;
+static int trace;
 
 static unsigned char helloresp[] = {
 //%2i%2i%s
@@ -65,7 +66,8 @@ static void senddata(const unsigned char *data, int len)
     *(int *)iobuffer = htonl(len);
     memcpy(&iobuffer[sizeof(int)], data, len);
     len += sizeof(int);
-    //memdump(iobuffer, len, (char *)"Tx");
+    if (trace)
+        memdump(iobuffer, len, (char *)"Tx");
     if ( (rc = write(socketfd, iobuffer, len)) < 0 ) {
         perror("client: writing on socket stream");
         exit(1);
@@ -80,30 +82,28 @@ typedef struct {
 } COMMANDINFO;
 
 #define COMMANDS() \
-    CC( CMD_SYNERGY, "Synergy", "22S") \
-    CC( CMD_QINF,    "QINF", NULL) \
-    CC( CMD_CCLP,    "CCLP", "14") \
-    CC( CMD_DCLP,    "DCLP", "14S") \
-    CC( CMD_DSOP,    "DSOP", "4") \
-    CC( CMD_CALV,    "CALV", NULL) \
-    CC( CMD_CIAK,    "CIAK", NULL) \
-    CC( CMD_CROP,    "CROP", NULL) \
-    CC( CMD_CNOP,    "CNOP", NULL) \
-    CC( CMD_CINN,    "CINN", "2242") \
-    CC( CMD_COUT,    "COUT", NULL) \
-    CC( CMD_DMMV,    "DMMV", "22") \
-    CC( CMD_DMDN,    "DMDN", "1") \
-    CC( CMD_DMUP,    "DMUP", "1") \
-    CC( CMD_DKDN,    "DKDN", "222") \
-    CC( CMD_DKUP,    "DKUP", "222")
+    CC( CALV, NULL) \
+    CC( CCLP, "14") \
+    CC( CIAK, NULL) \
+    CC( CINN, "2242") \
+    CC( CNOP, NULL) \
+    CC( COUT, NULL) \
+    CC( CROP, NULL) \
+    CC( DCLP, "14S") \
+    CC( DKDN, "222") \
+    CC( DKUP, "222") \
+    CC( DMDN, "1") \
+    CC( DMMV, "22") \
+    CC( DMUP, "1") \
+    CC( DSOP, "4") \
+    CC( QINF, NULL) \
+    CC( Synergy, "22S")
 
-#define CC(A,B,C) A,
+#define CC(A,B) CMD_##A,
 enum {CMD_NONE, COMMANDS() };
 #undef CC
-#define CC(A,B,C) {A, B, C},
-static COMMANDINFO commands[] = {
-    COMMANDS()
-    { -1, NULL, NULL} };
+#define CC(A,B) {CMD_##A, #A, B},
+static COMMANDINFO commands[] = { COMMANDS() { CMD_NONE, NULL, NULL} };
 #undef CC
 
 static int readdata(void)
@@ -131,14 +131,15 @@ static int readdata(void)
         printf ("******len %d rc %d\n", len, rc);
         memdump(iobuffer, rc, (char *)"Rx");
     }
-    //memdump(iobuffer, rc, (char *)"Rx");
+    if (trace)
+        memdump(iobuffer, rc, (char *)"Rx");
 
     while (cinfo->name && strncmp(p, cinfo->name, strlen(cinfo->name)) )
         cinfo++;
     indication.command = cinfo->command;
-printf ("command %d rc %d\n", cinfo->command, rc);
+printf ("command %s rc %d\n", commands[cinfo->command - 1].name, rc);
     switch(cinfo->command) {
-    case CMD_SYNERGY:
+    case CMD_Synergy:
         senddata(helloresp, sizeof(helloresp));
         break;
     case CMD_QINF:
@@ -149,18 +150,21 @@ printf ("command %d rc %d\n", cinfo->command, rc);
         senddata((unsigned char *)"CALV", 4);
         senddata((unsigned char *)"CNOP", 4);
         break;
-    default: {
-        static char bbb[5];
+    case CMD_NONE: {
+        char bbb[5];
         memcpy (bbb, iobuffer, 4);
-        printf("unknown %d '%s' ", cinfo->command, bbb);
-        rc -= sizeof(int) + 4;
-        if (rc > 0)
-            memdump(&iobuffer[sizeof(int) + 4], rc, (char *)"Rx");
+        printf("unknown '%s' ", bbb);
+        goto dump_packet;
+        }
+    default:
+        printf("undef '%s' ", commands[cinfo->command - 1].name);
+dump_packet:
+        if (rc > 4)
+            memdump(&iobuffer[4], rc - 4, (char *)"Rx");
         else
             printf("\n");
         break;
-        }
-    case CMD_DMMV:
+    case CMD_CCLP:
     case CMD_CINN:
     case CMD_COUT:
     case CMD_DCLP:
@@ -168,6 +172,7 @@ printf ("command %d rc %d\n", cinfo->command, rc);
     case CMD_CROP:
     case CMD_DMDN:
     case CMD_DMUP:
+    case CMD_DMMV:
     case CMD_DKDN:
     case CMD_DKUP:
         break;
