@@ -178,58 +178,6 @@ static int readdata(void)
     }
     indication.str = datap;
     indication.remain = iobuffer + len - datap;
-    if (cinfo->command && cinfo->command != CMD_CALV) {
-        printf ("command %s :", commands[cinfo->command - 1].name);
-        for (int i = 0; i < indication.count; i++)
-            printf("0x%x=%d., ", indication.param[i], indication.param[i]);
-        printf("\n");
-        if (indication.remain)
-            memdump(indication.str, indication.remain, "REM");
-    }
-    switch(cinfo->command) {
-    case CMD_Synergy:
-        senddata(helloresp, sizeof(helloresp));
-        break;
-    case CMD_QINF:
-        senddata(dinf, sizeof(dinf));
-        break;
-    case CMD_CIAK:
-    case CMD_CALV:
-        senddata((unsigned char *)"CALV", 4);
-        senddata((unsigned char *)"CNOP", 4);
-        break;
-    case CMD_NONE: {
-        char bbb[5];
-        memcpy (bbb, iobuffer, 4);
-        printf("unknown '%s' ", bbb);
-        goto dump_packet;
-        }
-    default:
-        printf("undef '%s' ", commands[cinfo->command - 1].name);
-dump_packet:
-        if (rc > 4)
-            memdump(&iobuffer[4], rc - 4, "Rx");
-        else
-            printf("\n");
-        break;
-    case CMD_CCLP:
-    case CMD_CINN:
-    case CMD_COUT:
-    case CMD_CROP:
-    case CMD_CSEC:
-    case CMD_DCLP:
-    case CMD_DKDN:
-    case CMD_DKRP:
-    case CMD_DKUP:
-    case CMD_DMDN:
-    case CMD_DMMV:
-    case CMD_DMUP:
-    case CMD_DMWM:
-    case CMD_DSOP:
-        break;
-    case CMD_CBYE:
-        return 1;
-    }
     return 0;
 }
 
@@ -252,8 +200,44 @@ int main(int argc, char **argv)
         exit(1);
     }
     printf("synergyclient: connected\n");
-    while (!readdata())
-        ;
+    while (!readdata()) {
+        if (indication.command && indication.command != CMD_CALV) {
+            printf ("command %s :", commands[indication.command - 1].name);
+            for (int i = 0; i < indication.count; i++)
+                printf("0x%x=%d., ", indication.param[i], indication.param[i]);
+            printf("\n");
+            if (indication.remain)
+                memdump(indication.str, indication.remain, "REM");
+        }
+        switch(indication.command) {
+        case CMD_Synergy:
+            senddata(helloresp, sizeof(helloresp));
+            break;
+        case CMD_QINF:
+            senddata(dinf, sizeof(dinf));
+            break;
+        case CMD_CIAK:
+        case CMD_CALV:
+            senddata((unsigned char *)"CALV", 4);
+            senddata((unsigned char *)"CNOP", 4);
+            break;
+        case CMD_NONE: {
+            char bbb[5];
+            memcpy (bbb, iobuffer, 4);
+            printf("unknown '%s'\n", bbb);
+            break;
+            }
+        default:
+            printf("undef '%s'\n", commands[indication.command - 1].name);
+            break;
+        case CMD_CCLP: case CMD_CINN: case CMD_COUT: case CMD_CROP: case CMD_CSEC:
+        case CMD_DCLP: case CMD_DKDN: case CMD_DKRP: case CMD_DKUP:
+        case CMD_DMDN: case CMD_DMMV: case CMD_DMUP: case CMD_DMWM: case CMD_DSOP:
+            break;
+        case CMD_CBYE:
+            return 1;
+        }
+    }
     close(socketfd);
     return 0;
 }
