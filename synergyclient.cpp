@@ -24,8 +24,9 @@
 #include <netdb.h>
 #include <unistd.h>
 #include <stdarg.h>
-#include <netinet/in.h>
 #include <fcntl.h>
+#include <errno.h>
+#include <netinet/in.h>
 
 #define VERSION_MAJOR 1
 #define VERSION_MINOR 3
@@ -188,51 +189,51 @@ static int readdata(void)
 #include <linux/uinput.h>
 
 #define TAG "Synergy"
-#define DEVICENAME "/dev/input/event3"
+//#define DEVICENAME "/dev/input/event3"
+#define DEVICENAME "/dev/uinput"
 static int inputfd = -1;
 
 static void initialize()
 {
     static struct uinput_user_dev dev;
-int mouse = 0;
-int keyboard = 1;
+    int rc;
     
 printf("[%s:%d]\n", __FUNCTION__, __LINE__);
-    inputfd = open(DEVICENAME, O_RDWR);
+    inputfd = open(DEVICENAME, O_WRONLY);
     if (inputfd < 0) {
         printf("Can't open input device:%s \n", DEVICENAME);
         exit(1);
     }
+    ioctl(inputfd, UI_SET_EVBIT, EV_REL);
+    for (int aux = REL_X; aux <= REL_MISC; aux++)
+        ioctl(inputfd, UI_SET_RELBIT, aux);
+    rc = ioctl(inputfd, UI_SET_EVBIT, EV_KEY);
+printf("[%s:%d] rc %d errno %d.\n", __FUNCTION__, __LINE__, rc, errno);
+    rc = ioctl(inputfd, UI_SET_EVBIT, EV_SYN);
+printf("[%s:%d] rc %d errno %d.\n", __FUNCTION__, __LINE__, rc, errno);
+    ioctl(inputfd, UI_SET_EVBIT, EV_LED);
+    ioctl(inputfd, UI_SET_EVBIT, EV_REP);
+    for (int aux = KEY_RESERVED; aux <= KEY_UNKNOWN; aux++)
+        ioctl(inputfd, UI_SET_KEYBIT, aux);
+    ioctl(inputfd, UI_SET_KEYBIT, KEY_J);
+    //for (int aux = LED_NUML; aux <= LED_MISC; aux++)
+    //    ioctl(inputfd, UI_SET_LEDBIT, aux);
+    for (int aux = BTN_LEFT; aux <= BTN_BACK; aux++)
+        ioctl(inputfd, UI_SET_KEYBIT, aux);
+
     strcpy(dev.name, "Synergy");
     dev.id.bustype = 0x0003;// BUS_USB;
-    dev.id.vendor  = 0x0000;
-    dev.id.product = 0x0000;
-    dev.id.version = 0x0000;
-    if (write(inputfd, &dev, sizeof(dev)) < 0) {
+    dev.id.vendor  = 0x1234;
+    dev.id.product = 0xfedc;
+    dev.id.version = 1;
+    if ((rc = write(inputfd, &dev, sizeof(dev))) < 0) {
         printf("Can't write device information");
         close(inputfd);
         exit(1);
     }
-    if (mouse) {
-        ioctl(inputfd, UI_SET_EVBIT, EV_REL);
-        for (int aux = REL_X; aux <= REL_MISC; aux++)
-            ioctl(inputfd, UI_SET_RELBIT, aux);
-    }
-    if (keyboard) {
-        ioctl(inputfd, UI_SET_EVBIT, EV_KEY);
-        ioctl(inputfd, UI_SET_EVBIT, EV_LED);
-        ioctl(inputfd, UI_SET_EVBIT, EV_REP);
-        for (int aux = KEY_RESERVED; aux <= KEY_UNKNOWN; aux++)
-            ioctl(inputfd, UI_SET_KEYBIT, aux);
-        //for (int aux = LED_NUML; aux <= LED_MISC; aux++)
-        //    ioctl(inputfd, UI_SET_LEDBIT, aux);
-    }
-    if (mouse) {
-        ioctl(inputfd, UI_SET_EVBIT, EV_KEY);
-        for (int aux = BTN_LEFT; aux <= BTN_BACK; aux++)
-            ioctl(inputfd, UI_SET_KEYBIT, aux);
-    }
-    ioctl(inputfd, UI_DEV_CREATE);
+printf("[%s:%d] rc %d errno %d.\n", __FUNCTION__, __LINE__, rc, errno);
+    rc = ioctl(inputfd, UI_DEV_CREATE);
+printf("[%s:%d] rc %d errno %d.\n", __FUNCTION__, __LINE__, rc, errno);
     printf("jjjintCreate success: %d\n",  inputfd);
 }
 
@@ -253,24 +254,21 @@ int main(int argc, char **argv)
 {
     struct sockaddr_in server;
 
-printf("[%s:%d]\n", __FUNCTION__, __LINE__);
+    if (argc != 2) {
+        printf ("synergyclient <ipaddressofserver>\n");
+        exit(-1);
+    }
     server.sin_family = AF_INET;
     server.sin_port = htons(24800);
     //socketfd = socket(AF_INET, SOCK_STREAM, 0); 
     socketfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP); 
-printf("[%s:%d]\n", __FUNCTION__, __LINE__);
-    struct hostent *h = gethostbyname("127.0.0.1");
-printf("[%s:%d]\n", __FUNCTION__, __LINE__);
+    struct hostent *h = gethostbyname(argv[1]);
     if ( socketfd < 0 || !h ) {
-printf("[%s:%d]\n", __FUNCTION__, __LINE__);
         fprintf(stderr,"synergyclient: cannot initialize\n");
         exit(2);
     }
-printf("[%s:%d]\n", __FUNCTION__, __LINE__);
     memcpy(&server.sin_addr, h->h_addr, h->h_length);
-printf("[%s:%d]\n", __FUNCTION__, __LINE__);
     if (connect(socketfd, (const sockaddr *)&server, sizeof(server)) < 0 ) {
-printf("[%s:%d]\n", __FUNCTION__, __LINE__);
         perror("synergyclient: error in connect");
         exit(1);
     }
@@ -312,14 +310,39 @@ send_input_event(EV_KEY, KEY_J, 0);
         default:
             printf("undef '%s'\n", commands[indication.command - 1].name);
             break;
+        case CMD_DKDN:
+#ifdef FORANDROID
+            send_input_event(EV_KEY, KEY_J, 1);
+            send_input_event(EV_SYN, 0, 0);
+            break;
+#endif
+        case CMD_DKUP:
+#ifdef FORANDROID
+            send_input_event(EV_KEY, KEY_J, 0);
+            send_input_event(EV_SYN, 0, 0);
+            break;
+#endif
+        case CMD_DMMV:
+#ifdef FORANDROID
+            send_input_event(EV_ABS, ABS_X, 100);
+            send_input_event(EV_ABS, ABS_Y, 100);
+            send_input_event(EV_SYN, 0, 0);
+            break;
+#endif
         case CMD_CCLP: case CMD_CINN: case CMD_COUT: case CMD_CROP: case CMD_CSEC:
-        case CMD_DCLP: case CMD_DKDN: case CMD_DKRP: case CMD_DKUP:
-        case CMD_DMDN: case CMD_DMMV: case CMD_DMUP: case CMD_DMWM: case CMD_DSOP:
+        case CMD_DCLP:
+        case CMD_DKRP:
+        case CMD_DMDN:
+        case CMD_DMUP: case CMD_DMWM: case CMD_DSOP:
             break;
         case CMD_CBYE:
             return 1;
         }
     }
     close(socketfd);
+#ifdef FORANDROID
+    int rc = ioctl(inputfd, UI_DEV_DESTROY);
+printf("[%s:%d] rc %d errno %d.\n", __FUNCTION__, __LINE__, rc, errno);
+#endif
     return 0;
 }
