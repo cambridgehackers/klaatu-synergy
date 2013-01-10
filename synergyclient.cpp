@@ -25,12 +25,16 @@
 #include <unistd.h>
 #include <stdarg.h>
 
-#define BUFSIZE     100000    /* size of buffer sent */
-static unsigned char iobuffer[BUFSIZE];
-static int socketfd;
-static int trace = 0;
 #define VERSION_MAJOR 1
 #define VERSION_MINOR 3
+#define BUFSIZE     100000    /* size of buffer sent */
+#define COMMANDS() \
+    CC(CALV, NULL) CC(CBYE, NULL) CC(CCLP, "14") CC(CIAK, NULL) \
+    CC(CINN, "2242") CC(CNOP, NULL) CC(COUT, NULL) CC(CROP, NULL) \
+    CC(CSEC, "1") CC(DCLP, "14S") CC(DINF, "2222222") \
+    CC(DKDN, "222") CC(DKRP, "2222") CC(DKUP, "222") \
+    CC(DMDN, "1") CC(DMMV, "22") CC(DMUP, "1") CC(DMWM, "22") \
+    CC(DSOP, "S") CC(QINF, NULL) CC(Synergy, "22S")
 
 typedef struct {
     int command;
@@ -46,13 +50,10 @@ typedef struct {
     int param[10];
 } INDICATIONINFO;
 
-#define COMMANDS() \
-    CC( CALV, NULL) CC( CBYE, NULL) CC( CCLP, "14") CC( CIAK, NULL) \
-    CC( CINN, "2242") CC( CNOP, NULL) CC( COUT, NULL) CC( CROP, NULL) \
-    CC( CSEC, "1") CC( DCLP, "14S") CC( DINF, "2222222") \
-    CC( DKDN, "222") CC( DKRP, "2222") CC( DKUP, "222") \
-    CC( DMDN, "1") CC( DMMV, "22") CC( DMUP, "1") CC( DMWM, "22") \
-    CC( DSOP, "S") CC( QINF, NULL) CC( Synergy, "22S")
+static unsigned char iobuffer[BUFSIZE];
+static int socketfd;
+static int trace = 0;
+static INDICATIONINFO indication;
 
 #define CC(A,B) CMD_##A,
 enum {CMD_NONE, COMMANDS() };
@@ -61,11 +62,9 @@ enum {CMD_NONE, COMMANDS() };
 static COMMANDINFO commands[] = { COMMANDS() { CMD_NONE, NULL, NULL} };
 #undef CC
 
-static INDICATIONINFO indication;
-
 static void memdump(unsigned char *p, int len, const char *title)
 {
-int i = 0;
+    int i = 0;
     while (len > 0) {
         if (!(i & 0xf)) {
             if (i > 0)
@@ -129,7 +128,6 @@ static void senddata(int command, ...)
         perror("client: writing on socket stream");
         exit(1);
     }
-    //printf("[%s:%d] after write %d\n", __FUNCTION__, __LINE__, rc);
 }
 
 static int readdata(void)
@@ -148,10 +146,8 @@ static int readdata(void)
     }
     if (!rc)
         return -1;
-    if (rc != len) {
-        printf ("******len %d rc %d\n", len, rc);
-        memdump(iobuffer, rc, "Rx");
-    }
+    if (rc != len)
+        printf ("readdata: error in read len %d rc %d\n", len, rc);
     if (trace)
         memdump(iobuffer, rc, "Rx");
 
@@ -247,3 +243,82 @@ int main(int argc, char **argv)
     close(socketfd);
     return 0;
 }
+#ifdef FORANDROID
+//#include <string.h>
+//#include <stdlib.h>
+//#include <unistd.h>
+//#include <fcntl.h>
+//#include <stdio.h>
+//#include <sys/ioctl.h>
+//#include <sys/mman.h>
+//#include <sys/types.h>
+//#include <time.h>
+//#include <linux/fb.h>
+//#include <linux/kd.h>
+//#include <android/log.h>
+#include <linux/input.h>
+
+#define TAG "Synergy"
+#define devicename "/dev/input/event3"
+static int inputfd = -1;
+
+static void initialize()
+{
+    struct uinput_dev dev;
+int mouse = 0;
+int keyboard = 1;
+    
+    inputfd = open(devicename, O_RDWR);
+    if (inputfd < 0) {
+        printf("Can't open input device:%s \n", devicename);
+        return -1;
+    }
+    memset(&dev, 0, sizeof(dev));
+    strcpy(dev.name, "Synergy");
+    dev.id.bustype = 0x0003;// BUS_USB;
+    dev.id.vendor  = 0x0000;
+    dev.id.product = 0x0000;
+    dev.id.version = 0x0000;
+    if (write(inputfd, &dev, sizeof(dev)) < 0) {
+        printf("Can't write device information");
+        close(inputfd);
+        return -1;
+    }
+    if (mouse) {
+        ioctl(inputfd, UI_SET_EVBIT, EV_REL);
+        for (int aux = REL_X; aux <= REL_MISC; aux++)
+            ioctl(inputfd, UI_SET_RELBIT, aux);
+    }
+    if (keyboard) {
+        ioctl(inputfd, UI_SET_EVBIT, EV_KEY);
+        ioctl(inputfd, UI_SET_EVBIT, EV_LED);
+        ioctl(inputfd, UI_SET_EVBIT, EV_REP);
+        for (int aux = KEY_RESERVED; aux <= KEY_UNKNOWN; aux++)
+            ioctl(inputfd, UI_SET_KEYBIT, aux);
+        //for (int aux = LED_NUML; aux <= LED_MISC; aux++)
+        //    ioctl(inputfd, UI_SET_LEDBIT, aux);
+    }
+    if (mouse) {
+        ioctl(inputfd, UI_SET_EVBIT, EV_KEY);
+        for (int aux = BTN_LEFT; aux <= BTN_BACK; aux++)
+            ioctl(inputfd, UI_SET_KEYBIT, aux);
+    }
+    ioctl(inputfd, UI_DEV_CREATE);
+    printf("intCreate success: %d\n",  inputfd);
+}
+
+void send_input_event(uint16_t type, uint16_t code, int32_t value)
+{
+    struct uinput_event event;
+
+    printf("intSendEvent call (%d,%d,%d,%d)\n", type, code, value);
+    if (inputfd < 0)
+        return;
+    memset(&event, 0, sizeof(event));
+    event.type = type;
+    event.code = code;
+    event.value = value;
+    int len = write(inputfd, &event, sizeof(event));
+    printf("intSendEvent done:%d\n",len);
+} 
+#endif
