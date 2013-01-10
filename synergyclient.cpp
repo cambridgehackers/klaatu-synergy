@@ -31,7 +31,7 @@
 #define VERSION_MINOR 3
 #define BUFSIZE     100000    /* size of buffer sent */
 #define COMMANDS() \
-    CC(CALV, NULL) CC(CBYE, NULL) CC(CCLP, "14") CC(CIAK, NULL) \
+    CC(CALV, NULL) CC(EBSY, NULL) CC(CBYE, NULL) CC(CCLP, "14") CC(CIAK, NULL) \
     CC(CINN, "2242") CC(CNOP, NULL) CC(COUT, NULL) CC(CROP, NULL) \
     CC(CSEC, "1") CC(DCLP, "14S") CC(DINF, "2222222") \
     CC(DKDN, "222") CC(DKRP, "2222") CC(DKUP, "222") \
@@ -317,6 +317,8 @@ send_input_event(EV_KEY, KEY_J, 0);
         case CMD_DMDN: case CMD_DMMV: case CMD_DMUP: case CMD_DMWM: case CMD_DSOP:
             break;
         case CMD_CBYE:
+            return 1;
+        case CMD_EBSY:
             return 1;
         }
     }
