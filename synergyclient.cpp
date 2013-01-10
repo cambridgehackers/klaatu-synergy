@@ -189,7 +189,6 @@ static int readdata(void)
 #include <linux/uinput.h>
 
 #define TAG "Synergy"
-//#define DEVICENAME "/dev/input/event3"
 #define DEVICENAME "/dev/uinput"
 static int inputfd = -1;
 
@@ -204,25 +203,28 @@ printf("[%s:%d]\n", __FUNCTION__, __LINE__);
         printf("Can't open input device:%s \n", DEVICENAME);
         exit(1);
     }
-    ioctl(inputfd, UI_SET_EVBIT, EV_REL);
-    for (int aux = REL_X; aux <= REL_MISC; aux++)
-        ioctl(inputfd, UI_SET_RELBIT, aux);
-    rc = ioctl(inputfd, UI_SET_EVBIT, EV_KEY);
-printf("[%s:%d] rc %d errno %d.\n", __FUNCTION__, __LINE__, rc, errno);
-    rc = ioctl(inputfd, UI_SET_EVBIT, EV_SYN);
-printf("[%s:%d] rc %d errno %d.\n", __FUNCTION__, __LINE__, rc, errno);
-    ioctl(inputfd, UI_SET_EVBIT, EV_LED);
-    ioctl(inputfd, UI_SET_EVBIT, EV_REP);
-    for (int aux = KEY_RESERVED; aux <= KEY_UNKNOWN; aux++)
-        ioctl(inputfd, UI_SET_KEYBIT, aux);
-    ioctl(inputfd, UI_SET_KEYBIT, KEY_J);
-    //for (int aux = LED_NUML; aux <= LED_MISC; aux++)
-    //    ioctl(inputfd, UI_SET_LEDBIT, aux);
-    for (int aux = BTN_LEFT; aux <= BTN_BACK; aux++)
+    ioctl(inputfd, UI_SET_EVBIT, EV_SYN);
+
+    /* keyboard */
+    ioctl(inputfd, UI_SET_EVBIT, EV_KEY);
+    for (int aux = 0; aux <= KEY_MAX; aux++)
         ioctl(inputfd, UI_SET_KEYBIT, aux);
 
+    /* mouse REL */
+    ioctl(inputfd, UI_SET_EVBIT, EV_REL);
+    for (int aux = 0; aux <= REL_MAX; aux++)
+        ioctl(inputfd, UI_SET_RELBIT, aux);
+
+    ///* mouse ABS */
+    //ioctl(inputfd, UI_SET_EVBIT, EV_ABS);
+    //for (int aux = 0; aux <= ABS_MAX; aux++)
+    //    ioctl(inputfd, UI_SET_ABSBIT, aux);
+    //ioctl(inputfd, UI_SET_ABSBIT, ABS_MT_POSITION_X);
+    //ioctl(inputfd, UI_SET_ABSBIT, ABS_MT_POSITION_Y);
+    //ioctl(inputfd, UI_SET_ABSBIT, ABS_MT_PRESSURE);
+
     strcpy(dev.name, "Synergy");
-    dev.id.bustype = 0x0003;// BUS_USB;
+    dev.id.bustype = BUS_USB;
     dev.id.vendor  = 0x1234;
     dev.id.product = 0xfedc;
     dev.id.version = 1;
@@ -231,10 +233,8 @@ printf("[%s:%d] rc %d errno %d.\n", __FUNCTION__, __LINE__, rc, errno);
         close(inputfd);
         exit(1);
     }
-printf("[%s:%d] rc %d errno %d.\n", __FUNCTION__, __LINE__, rc, errno);
     rc = ioctl(inputfd, UI_DEV_CREATE);
-printf("[%s:%d] rc %d errno %d.\n", __FUNCTION__, __LINE__, rc, errno);
-    printf("jjjintCreate success: %d\n",  inputfd);
+    printf("jjjintCreate success: %d %d\n",  inputfd, rc);
 }
 
 void send_input_event(uint16_t type, uint16_t code, int32_t value)
@@ -253,6 +253,7 @@ void send_input_event(uint16_t type, uint16_t code, int32_t value)
 int main(int argc, char **argv)
 {
     struct sockaddr_in server;
+    int last_x = -1, last_y = -1;
 
     if (argc != 2) {
         printf ("synergyclient <ipaddressofserver>\n");
@@ -260,7 +261,6 @@ int main(int argc, char **argv)
     }
     server.sin_family = AF_INET;
     server.sin_port = htons(24800);
-    //socketfd = socket(AF_INET, SOCK_STREAM, 0); 
     socketfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP); 
     struct hostent *h = gethostbyname(argv[1]);
     if ( socketfd < 0 || !h ) {
@@ -275,8 +275,6 @@ int main(int argc, char **argv)
     printf("synergyclient: connected\n");
 #ifdef FORANDROID
     initialize();
-send_input_event(EV_KEY, KEY_J, 1);
-send_input_event(EV_KEY, KEY_J, 0);
 #endif
     while (!readdata()) {
         if (indication.command && indication.command != CMD_CALV) {
@@ -313,27 +311,42 @@ send_input_event(EV_KEY, KEY_J, 0);
         case CMD_DKDN:
 #ifdef FORANDROID
             send_input_event(EV_KEY, KEY_J, 1);
-            send_input_event(EV_SYN, 0, 0);
-            break;
+            send_input_event(EV_SYN, SYN_REPORT, 0);
 #endif
+            break;
         case CMD_DKUP:
 #ifdef FORANDROID
             send_input_event(EV_KEY, KEY_J, 0);
-            send_input_event(EV_SYN, 0, 0);
-            break;
+            send_input_event(EV_SYN, SYN_REPORT, 0);
 #endif
+            break;
         case CMD_DMMV:
 #ifdef FORANDROID
-            send_input_event(EV_ABS, ABS_X, 100);
-            send_input_event(EV_ABS, ABS_Y, 100);
-            send_input_event(EV_SYN, 0, 0);
-            break;
+            if (last_x != -1) {
+                send_input_event(EV_REL, REL_X, indication.param[0] - last_x);
+                send_input_event(EV_REL, REL_Y, indication.param[1] - last_y);
+                send_input_event(EV_SYN, SYN_REPORT, 0);
+            }
 #endif
+            last_x = indication.param[0];
+            last_y = indication.param[1];
+            break;
+        case CMD_DMDN:
+#ifdef FORANDROID
+            send_input_event(EV_KEY, BTN_MOUSE, 1);
+            send_input_event(EV_SYN, SYN_REPORT, 0);
+#endif
+            break;
+        case CMD_DMUP:
+#ifdef FORANDROID
+            send_input_event(EV_KEY, BTN_MOUSE, 0);
+            send_input_event(EV_SYN, SYN_REPORT, 0);
+#endif
+            break;
         case CMD_CCLP: case CMD_CINN: case CMD_COUT: case CMD_CROP: case CMD_CSEC:
         case CMD_DCLP:
         case CMD_DKRP:
-        case CMD_DMDN:
-        case CMD_DMUP: case CMD_DMWM: case CMD_DSOP:
+        case CMD_DMWM: case CMD_DSOP:
             break;
         case CMD_CBYE:
             return 1;
