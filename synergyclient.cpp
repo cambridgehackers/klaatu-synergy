@@ -23,6 +23,7 @@
 #include <string.h>
 #include <netdb.h>
 #include <unistd.h>
+#include <stdarg.h>
 
 #define BUFSIZE     100000    /* size of buffer sent */
 static unsigned char iobuffer[BUFSIZE];
@@ -31,36 +32,40 @@ static int trace = 0;
 #define VERSION_MAJOR 1
 #define VERSION_MINOR 3
 
-static unsigned char helloresp[] = {
-    'S', 'y', 'n', 'e', 'r', 'g', 'y',
-        0, VERSION_MAJOR,
-        0, VERSION_MINOR,
-        0, 0, 0, 0x07,
-        'a', 'n', 'd', 'r', 'o', 'i', 'd'
-};
-static unsigned char dinf[] = {
-    'D', 'I', 'N', 'F',
-        0, 0, /* x */
-        0, 0, /* y */
-        0x1d, 0x10, /* w */
-        0x04, 0x38, /* h */
-        0, 0, /* 0 */
-        0x07, 0x80, /* mx */
-        0x02, 0x1c /* my */
-};
-static struct {
+typedef struct {
+    int command;
+    const char *name;
+    const char *params;
+} COMMANDINFO;
+
+typedef struct {
     int command;
     int count;
     int remain;
     unsigned char *str;
     int param[10];
-} indication;
+} INDICATIONINFO;
 
-void memdump(unsigned char *p, int len, const char *title)
+#define COMMANDS() \
+    CC( CALV, NULL) CC( CBYE, NULL) CC( CCLP, "14") CC( CIAK, NULL) \
+    CC( CINN, "2242") CC( CNOP, NULL) CC( COUT, NULL) CC( CROP, NULL) \
+    CC( CSEC, "1") CC( DCLP, "14S") CC( DINF, "2222222") \
+    CC( DKDN, "222") CC( DKRP, "2222") CC( DKUP, "222") \
+    CC( DMDN, "1") CC( DMMV, "22") CC( DMUP, "1") CC( DMWM, "22") \
+    CC( DSOP, "S") CC( QINF, NULL) CC( Synergy, "22S")
+
+#define CC(A,B) CMD_##A,
+enum {CMD_NONE, COMMANDS() };
+#undef CC
+#define CC(A,B) {CMD_##A, #A, B},
+static COMMANDINFO commands[] = { COMMANDS() { CMD_NONE, NULL, NULL} };
+#undef CC
+
+static INDICATIONINFO indication;
+
+static void memdump(unsigned char *p, int len, const char *title)
 {
-int i;
-
-    i = 0;
+int i = 0;
     while (len > 0) {
         if (!(i & 0xf)) {
             if (i > 0)
@@ -74,12 +79,50 @@ int i;
     printf("\n");
 }
 
-static void senddata(const unsigned char *data, int len)
+static void senddata(int command, ...)
 {
     int rc;
-    *(int *)iobuffer = htonl(len);
-    memcpy(&iobuffer[sizeof(int)], data, len);
-    len += sizeof(int);
+    char *p = (char *)iobuffer + sizeof(int);
+    const char *param = commands[command-1].params;
+    va_list args;
+    va_start(args, command);
+    strcpy(p, commands[command-1].name);
+    p += strlen(commands[command-1].name);
+    while (param && *param) {
+        int val = 0;
+        char *ptr = NULL;
+        int pch = *param++;
+        int count = pch - '0';
+        if(pch == 'S') {
+            ptr = va_arg(args, char *);
+            val = strlen(ptr);
+            count = 4;
+        }
+        else
+            val = va_arg(args, int);
+        switch(pch) {
+        case '1':
+            val <<= 8;
+        case '2':
+            val <<= 16;
+        case '4': case 'S':
+            while (count--) {
+                *p++ = (val >> 24);
+                val <<= 8;
+            }
+            break;
+        default:
+            printf ("bad case in params: %s\n", commands[command-1].params);
+            break;
+        }
+        if (ptr) {
+            strcpy(p, ptr);
+            p += strlen(ptr);
+        }
+    }
+    va_end(args);
+    int len = p - (char *)iobuffer;
+    *(int *)iobuffer = htonl(len - sizeof(int));
     if (trace)
         memdump(iobuffer, len, "Tx");
     if ( (rc = write(socketfd, iobuffer, len)) < 0 ) {
@@ -88,42 +131,6 @@ static void senddata(const unsigned char *data, int len)
     }
     //printf("[%s:%d] after write %d\n", __FUNCTION__, __LINE__, rc);
 }
-
-typedef struct {
-    int command;
-    const char *name;
-    const char *params;
-} COMMANDINFO;
-
-#define COMMANDS() \
-    CC( CALV, NULL) \
-    CC( CBYE, NULL) \
-    CC( CCLP, "14") \
-    CC( CIAK, NULL) \
-    CC( CINN, "2242") \
-    CC( CNOP, NULL) \
-    CC( COUT, NULL) \
-    CC( CROP, NULL) \
-    CC( CSEC, "1") \
-    CC( DCLP, "14S") \
-    CC( DINF, "2222222") \
-    CC( DKDN, "222") \
-    CC( DKRP, "2222") \
-    CC( DKUP, "222") \
-    CC( DMDN, "1") \
-    CC( DMMV, "22") \
-    CC( DMUP, "1") \
-    CC( DMWM, "22") \
-    CC( DSOP, "S") \
-    CC( QINF, NULL) \
-    CC( Synergy, "22S")
-
-#define CC(A,B) CMD_##A,
-enum {CMD_NONE, COMMANDS() };
-#undef CC
-#define CC(A,B) {CMD_##A, #A, B},
-static COMMANDINFO commands[] = { COMMANDS() { CMD_NONE, NULL, NULL} };
-#undef CC
 
 static int readdata(void)
 {
@@ -156,24 +163,21 @@ static int readdata(void)
     unsigned char *datap = iobuffer;
     if (cinfo->name)
         datap += strlen(cinfo->name);
-    if (param) {
-        while (*param && datap < iobuffer + len) {
-            int val = 0;
-            int pch = *param++;
-            switch(pch) {
-            case 'S':
-            case '4':
-                val = (val << 8) | *datap++;
-                val = (val << 8) | *datap++;
-            case '2':
-                val = (val << 8) | *datap++;
-            case '1':
-                indication.param[indication.count++] = (val << 8) | *datap++;
-                break;
-            default:
-                printf ("bad case in params: %s\n", cinfo->params);
-                break;
-            }
+    while (param && *param && datap < iobuffer + len) {
+        int val = 0;
+        int pch = *param++;
+        switch(pch) {
+        case '4': case 'S':
+            val = (val << 8) | *datap++;
+            val = (val << 8) | *datap++;
+        case '2':
+            val = (val << 8) | *datap++;
+        case '1':
+            indication.param[indication.count++] = (val << 8) | *datap++;
+            break;
+        default:
+            printf ("bad case in params: %s\n", cinfo->params);
+            break;
         }
     }
     indication.str = datap;
@@ -211,15 +215,17 @@ int main(int argc, char **argv)
         }
         switch(indication.command) {
         case CMD_Synergy:
-            senddata(helloresp, sizeof(helloresp));
+            senddata(CMD_Synergy, VERSION_MAJOR, VERSION_MINOR, "android");
             break;
         case CMD_QINF:
-            senddata(dinf, sizeof(dinf));
+            senddata(CMD_DINF, 0/* x */, 0/* y */,
+                7440/* w */, 1080/* h */,
+                0/* 0 */, 1920/* mx */, 540/* my */);
             break;
         case CMD_CIAK:
         case CMD_CALV:
-            senddata((unsigned char *)"CALV", 4);
-            senddata((unsigned char *)"CNOP", 4);
+            senddata(CMD_CALV);
+            senddata(CMD_CNOP);
             break;
         case CMD_NONE: {
             char bbb[5];
