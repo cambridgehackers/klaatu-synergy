@@ -24,6 +24,8 @@
 #include <netdb.h>
 #include <unistd.h>
 #include <stdarg.h>
+#include <netinet/in.h>
+#include <fcntl.h>
 
 #define VERSION_MAJOR 1
 #define VERSION_MINOR 3
@@ -180,26 +182,104 @@ static int readdata(void)
     indication.remain = iobuffer + len - datap;
     return 0;
 }
+#ifdef FORANDROID
+#include <android/log.h>
+#include <linux/input.h>
+#include <linux/uinput.h>
+
+#define TAG "Synergy"
+#define DEVICENAME "/dev/input/event3"
+static int inputfd = -1;
+
+static void initialize()
+{
+    static struct uinput_user_dev dev;
+int mouse = 0;
+int keyboard = 1;
+    
+printf("[%s:%d]\n", __FUNCTION__, __LINE__);
+    inputfd = open(DEVICENAME, O_RDWR);
+    if (inputfd < 0) {
+        printf("Can't open input device:%s \n", DEVICENAME);
+        exit(1);
+    }
+    strcpy(dev.name, "Synergy");
+    dev.id.bustype = 0x0003;// BUS_USB;
+    dev.id.vendor  = 0x0000;
+    dev.id.product = 0x0000;
+    dev.id.version = 0x0000;
+    if (write(inputfd, &dev, sizeof(dev)) < 0) {
+        printf("Can't write device information");
+        close(inputfd);
+        exit(1);
+    }
+    if (mouse) {
+        ioctl(inputfd, UI_SET_EVBIT, EV_REL);
+        for (int aux = REL_X; aux <= REL_MISC; aux++)
+            ioctl(inputfd, UI_SET_RELBIT, aux);
+    }
+    if (keyboard) {
+        ioctl(inputfd, UI_SET_EVBIT, EV_KEY);
+        ioctl(inputfd, UI_SET_EVBIT, EV_LED);
+        ioctl(inputfd, UI_SET_EVBIT, EV_REP);
+        for (int aux = KEY_RESERVED; aux <= KEY_UNKNOWN; aux++)
+            ioctl(inputfd, UI_SET_KEYBIT, aux);
+        //for (int aux = LED_NUML; aux <= LED_MISC; aux++)
+        //    ioctl(inputfd, UI_SET_LEDBIT, aux);
+    }
+    if (mouse) {
+        ioctl(inputfd, UI_SET_EVBIT, EV_KEY);
+        for (int aux = BTN_LEFT; aux <= BTN_BACK; aux++)
+            ioctl(inputfd, UI_SET_KEYBIT, aux);
+    }
+    ioctl(inputfd, UI_DEV_CREATE);
+    printf("jjjintCreate success: %d\n",  inputfd);
+}
+
+void send_input_event(uint16_t type, uint16_t code, int32_t value)
+{
+    static struct input_event event;
+
+    printf("intSendEvent call (%d,%d,%d)\n", type, code, value);
+    event.type = type;
+    event.code = code;
+    event.value = value;
+    int len = write(inputfd, &event, sizeof(event));
+    printf("intSendEvent done:%d\n",len);
+} 
+#endif
 
 int main(int argc, char **argv)
 {
     struct sockaddr_in server;
 
+printf("[%s:%d]\n", __FUNCTION__, __LINE__);
     server.sin_family = AF_INET;
     server.sin_port = htons(24800);
     //socketfd = socket(AF_INET, SOCK_STREAM, 0); 
     socketfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP); 
+printf("[%s:%d]\n", __FUNCTION__, __LINE__);
     struct hostent *h = gethostbyname("127.0.0.1");
+printf("[%s:%d]\n", __FUNCTION__, __LINE__);
     if ( socketfd < 0 || !h ) {
+printf("[%s:%d]\n", __FUNCTION__, __LINE__);
         fprintf(stderr,"synergyclient: cannot initialize\n");
         exit(2);
     }
+printf("[%s:%d]\n", __FUNCTION__, __LINE__);
     memcpy(&server.sin_addr, h->h_addr, h->h_length);
+printf("[%s:%d]\n", __FUNCTION__, __LINE__);
     if (connect(socketfd, (const sockaddr *)&server, sizeof(server)) < 0 ) {
+printf("[%s:%d]\n", __FUNCTION__, __LINE__);
         perror("synergyclient: error in connect");
         exit(1);
     }
     printf("synergyclient: connected\n");
+#ifdef FORANDROID
+    initialize();
+send_input_event(EV_KEY, KEY_J, 1);
+send_input_event(EV_KEY, KEY_J, 0);
+#endif
     while (!readdata()) {
         if (indication.command && indication.command != CMD_CALV) {
             printf ("command %s :", commands[indication.command - 1].name);
@@ -243,82 +323,3 @@ int main(int argc, char **argv)
     close(socketfd);
     return 0;
 }
-#ifdef FORANDROID
-//#include <string.h>
-//#include <stdlib.h>
-//#include <unistd.h>
-//#include <fcntl.h>
-//#include <stdio.h>
-//#include <sys/ioctl.h>
-//#include <sys/mman.h>
-//#include <sys/types.h>
-//#include <time.h>
-//#include <linux/fb.h>
-//#include <linux/kd.h>
-//#include <android/log.h>
-#include <linux/input.h>
-
-#define TAG "Synergy"
-#define devicename "/dev/input/event3"
-static int inputfd = -1;
-
-static void initialize()
-{
-    struct uinput_dev dev;
-int mouse = 0;
-int keyboard = 1;
-    
-    inputfd = open(devicename, O_RDWR);
-    if (inputfd < 0) {
-        printf("Can't open input device:%s \n", devicename);
-        return -1;
-    }
-    memset(&dev, 0, sizeof(dev));
-    strcpy(dev.name, "Synergy");
-    dev.id.bustype = 0x0003;// BUS_USB;
-    dev.id.vendor  = 0x0000;
-    dev.id.product = 0x0000;
-    dev.id.version = 0x0000;
-    if (write(inputfd, &dev, sizeof(dev)) < 0) {
-        printf("Can't write device information");
-        close(inputfd);
-        return -1;
-    }
-    if (mouse) {
-        ioctl(inputfd, UI_SET_EVBIT, EV_REL);
-        for (int aux = REL_X; aux <= REL_MISC; aux++)
-            ioctl(inputfd, UI_SET_RELBIT, aux);
-    }
-    if (keyboard) {
-        ioctl(inputfd, UI_SET_EVBIT, EV_KEY);
-        ioctl(inputfd, UI_SET_EVBIT, EV_LED);
-        ioctl(inputfd, UI_SET_EVBIT, EV_REP);
-        for (int aux = KEY_RESERVED; aux <= KEY_UNKNOWN; aux++)
-            ioctl(inputfd, UI_SET_KEYBIT, aux);
-        //for (int aux = LED_NUML; aux <= LED_MISC; aux++)
-        //    ioctl(inputfd, UI_SET_LEDBIT, aux);
-    }
-    if (mouse) {
-        ioctl(inputfd, UI_SET_EVBIT, EV_KEY);
-        for (int aux = BTN_LEFT; aux <= BTN_BACK; aux++)
-            ioctl(inputfd, UI_SET_KEYBIT, aux);
-    }
-    ioctl(inputfd, UI_DEV_CREATE);
-    printf("intCreate success: %d\n",  inputfd);
-}
-
-void send_input_event(uint16_t type, uint16_t code, int32_t value)
-{
-    struct uinput_event event;
-
-    printf("intSendEvent call (%d,%d,%d,%d)\n", type, code, value);
-    if (inputfd < 0)
-        return;
-    memset(&event, 0, sizeof(event));
-    event.type = type;
-    event.code = code;
-    event.value = value;
-    int len = write(inputfd, &event, sizeof(event));
-    printf("intSendEvent done:%d\n",len);
-} 
-#endif
