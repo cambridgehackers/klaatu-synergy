@@ -28,18 +28,33 @@
 static unsigned char iobuffer[BUFSIZE];
 static int socketfd;
 static int trace;
+#define VERSION_MAJOR 1
+#define VERSION_MINOR 3
 
 static unsigned char helloresp[] = {
-//%2i%2i%s
-'S', 'y', 'n', 'e', 'r', 'g', 'y', 0, 0x01, 0, 0x03, 0, 0, 0, 0x07, 'a', 'n', 'd', 'r', 'o', 'i', 'd'
+    'S', 'y', 'n', 'e', 'r', 'g', 'y',
+        0, VERSION_MAJOR,
+        0, VERSION_MINOR,
+        0, 0, 0, 0x07,
+        'a', 'n', 'd', 'r', 'o', 'i', 'd'
 };
 static unsigned char dinf[] = {
-//info.m_x, info.m_y, info.m_w, info.m_h, 0, info.m_mx, info.m_my);
-    'D', 'I', 'N', 'F', 0, 0, 0, 0, 0x1d, 0x10, 0x04, 0x38, 0, 0, 0x07, 0x80, 0x02, 0x1c
+    'D', 'I', 'N', 'F',
+        0, 0, /* x */
+        0, 0, /* y */
+        0x1d, 0x10, /* w */
+        0x04, 0x38, /* h */
+        0, 0, /* 0 */
+        0x07, 0x80, /* mx */
+        0x02, 0x1c /* my */
 };
 static struct {
     int command;
-    int param[10];
+    int count;
+    union {
+        int val;
+        unsigned char *ptr;
+    } param[10];
 } indication;
 
 void memdump(unsigned char *p, int len, char *title)
@@ -114,11 +129,7 @@ static COMMANDINFO commands[] = { COMMANDS() { CMD_NONE, NULL, NULL} };
 static int readdata(void)
 {
     int pindex = 0;
-//static struct {
-    //char *name;
-    //int param[10];
-//} indication;
-    char *p = (char *)iobuffer;
+    char *pdata = (char *)iobuffer;
     COMMANDINFO *cinfo = commands;
     int len = 0;
     int rc = read(socketfd, &len, sizeof(len));
@@ -139,11 +150,39 @@ static int readdata(void)
     if (trace)
         memdump(iobuffer, rc, (char *)"Rx");
 
-    while (cinfo->name && strncmp(p, cinfo->name, strlen(cinfo->name)) )
+    while (cinfo->name && strncmp((char *)iobuffer, cinfo->name, strlen(cinfo->name)) )
         cinfo++;
     indication.command = cinfo->command;
-if (cinfo->command && cinfo->command != CMD_CALV)
-printf ("command %s rc %d\n", commands[cinfo->command - 1].name, rc);
+    indication.count = 0;
+    const char *param = cinfo->params;
+    if (param) {
+        unsigned char *datap = iobuffer + strlen(cinfo->name);
+        while (*param) {
+            int val = 0;
+            int pch = *param++;
+            switch(pch) {
+            case 'S':
+            case '4':
+                val = (val << 8) | *datap++;
+                val = (val << 8) | *datap++;
+            case '2':
+                val = (val << 8) | *datap++;
+            case '1':
+                indication.param[indication.count++].val = (val << 8) | *datap++;
+                if (pch == 'S')
+                    indication.param[indication.count++].ptr = datap;
+                break;
+            default:
+                printf ("bad case in params: %s\n", cinfo->params);
+                break;
+            }
+        }
+    }
+    if (cinfo->command && cinfo->command != CMD_CALV) {
+        printf ("command %s rc %d count %d\n", commands[cinfo->command - 1].name, rc, indication.count);
+        for (int i = 0; i < indication.count; i++)
+            printf("param[%d]=%x\n", i, indication.param[i].val);
+    }
     switch(cinfo->command) {
     case CMD_Synergy:
         senddata(helloresp, sizeof(helloresp));

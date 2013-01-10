@@ -1,3 +1,3 @@
 
 all:
-	g++ -o synergyclient synergyclient.cpp
+	g++ -g -o synergyclient synergyclient.cpp
