@@ -24,10 +24,10 @@
 #include <netdb.h>
 #include <unistd.h>
 
-#define BUFSIZE     1024    /* size of buffer sent */
+#define BUFSIZE     100000    /* size of buffer sent */
 static unsigned char iobuffer[BUFSIZE];
 static int socketfd;
-static int trace;
+static int trace = 0;
 #define VERSION_MAJOR 1
 #define VERSION_MINOR 3
 
@@ -51,13 +51,12 @@ static unsigned char dinf[] = {
 static struct {
     int command;
     int count;
-    union {
-        int val;
-        unsigned char *ptr;
-    } param[10];
+    int remain;
+    unsigned char *str;
+    int param[10];
 } indication;
 
-void memdump(unsigned char *p, int len, char *title)
+void memdump(unsigned char *p, int len, const char *title)
 {
 int i;
 
@@ -82,7 +81,7 @@ static void senddata(const unsigned char *data, int len)
     memcpy(&iobuffer[sizeof(int)], data, len);
     len += sizeof(int);
     if (trace)
-        memdump(iobuffer, len, (char *)"Tx");
+        memdump(iobuffer, len, "Tx");
     if ( (rc = write(socketfd, iobuffer, len)) < 0 ) {
         perror("client: writing on socket stream");
         exit(1);
@@ -136,7 +135,6 @@ static int readdata(void)
     if (!rc)
         return -1;
     len = ntohl(len);
-//printf ("len %x rc %x\n", len, rc);
     if ( rc < 0 || (rc = read(socketfd, iobuffer, len)) < 0 ) {
         printf("readdata: reading socket stream");
         exit(1);
@@ -145,19 +143,21 @@ static int readdata(void)
         return -1;
     if (rc != len) {
         printf ("******len %d rc %d\n", len, rc);
-        memdump(iobuffer, rc, (char *)"Rx");
+        memdump(iobuffer, rc, "Rx");
     }
     if (trace)
-        memdump(iobuffer, rc, (char *)"Rx");
+        memdump(iobuffer, rc, "Rx");
 
     while (cinfo->name && strncmp((char *)iobuffer, cinfo->name, strlen(cinfo->name)) )
         cinfo++;
     indication.command = cinfo->command;
     indication.count = 0;
     const char *param = cinfo->params;
+    unsigned char *datap = iobuffer;
+    if (cinfo->name)
+        datap += strlen(cinfo->name);
     if (param) {
-        unsigned char *datap = iobuffer + strlen(cinfo->name);
-        while (*param) {
+        while (*param && datap < iobuffer + len) {
             int val = 0;
             int pch = *param++;
             switch(pch) {
@@ -168,9 +168,7 @@ static int readdata(void)
             case '2':
                 val = (val << 8) | *datap++;
             case '1':
-                indication.param[indication.count++].val = (val << 8) | *datap++;
-                if (pch == 'S')
-                    indication.param[indication.count++].ptr = datap;
+                indication.param[indication.count++] = (val << 8) | *datap++;
                 break;
             default:
                 printf ("bad case in params: %s\n", cinfo->params);
@@ -178,10 +176,15 @@ static int readdata(void)
             }
         }
     }
+    indication.str = datap;
+    indication.remain = iobuffer + len - datap;
     if (cinfo->command && cinfo->command != CMD_CALV) {
-        printf ("command %s rc %d count %d\n", commands[cinfo->command - 1].name, rc, indication.count);
+        printf ("command %s :", commands[cinfo->command - 1].name);
         for (int i = 0; i < indication.count; i++)
-            printf("param[%d]=%x\n", i, indication.param[i].val);
+            printf("0x%x=%d., ", indication.param[i], indication.param[i]);
+        printf("\n");
+        if (indication.remain)
+            memdump(indication.str, indication.remain, "REM");
     }
     switch(cinfo->command) {
     case CMD_Synergy:
@@ -205,7 +208,7 @@ static int readdata(void)
         printf("undef '%s' ", commands[cinfo->command - 1].name);
 dump_packet:
         if (rc > 4)
-            memdump(&iobuffer[4], rc - 4, (char *)"Rx");
+            memdump(&iobuffer[4], rc - 4, "Rx");
         else
             printf("\n");
         break;
