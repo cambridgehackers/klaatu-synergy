@@ -83,19 +83,24 @@ typedef struct {
 
 #define COMMANDS() \
     CC( CALV, NULL) \
+    CC( CBYE, NULL) \
     CC( CCLP, "14") \
     CC( CIAK, NULL) \
     CC( CINN, "2242") \
     CC( CNOP, NULL) \
     CC( COUT, NULL) \
     CC( CROP, NULL) \
+    CC( CSEC, "1") \
     CC( DCLP, "14S") \
+    CC( DINF, "2222222") \
     CC( DKDN, "222") \
+    CC( DKRP, "2222") \
     CC( DKUP, "222") \
     CC( DMDN, "1") \
     CC( DMMV, "22") \
     CC( DMUP, "1") \
-    CC( DSOP, "4") \
+    CC( DMWM, "22") \
+    CC( DSOP, "S") \
     CC( QINF, NULL) \
     CC( Synergy, "22S")
 
@@ -137,6 +142,7 @@ static int readdata(void)
     while (cinfo->name && strncmp(p, cinfo->name, strlen(cinfo->name)) )
         cinfo++;
     indication.command = cinfo->command;
+if (cinfo->command && cinfo->command != CMD_CALV)
 printf ("command %s rc %d\n", commands[cinfo->command - 1].name, rc);
     switch(cinfo->command) {
     case CMD_Synergy:
@@ -167,15 +173,20 @@ dump_packet:
     case CMD_CCLP:
     case CMD_CINN:
     case CMD_COUT:
-    case CMD_DCLP:
-    case CMD_DSOP:
     case CMD_CROP:
-    case CMD_DMDN:
-    case CMD_DMUP:
-    case CMD_DMMV:
+    case CMD_CSEC:
+    case CMD_DCLP:
     case CMD_DKDN:
+    case CMD_DKRP:
     case CMD_DKUP:
+    case CMD_DMDN:
+    case CMD_DMMV:
+    case CMD_DMUP:
+    case CMD_DMWM:
+    case CMD_DSOP:
         break;
+    case CMD_CBYE:
+        return 1;
     }
     return 0;
 }
